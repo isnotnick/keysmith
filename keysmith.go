@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"encoding/pem"
+
+	p12 "software.sslmate.com/src/go-pkcs12"
 )
 
 type SubjectStruct struct {
@@ -147,4 +149,50 @@ func (inputKeyBlock *KeyBlock) GenerateCSR() {
 	finalCSRBytes, _ := x509.CreateCertificateRequest(rand.Reader, &certTemplate, keyBytes)
 	inputKeyBlock.CSRPEM = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: finalCSRBytes}))
 	return
+}
+
+func GenerateP12(inputKeyBlock KeyBlock, p12Password string) []byte {
+	if inputKeyBlock.CertPEM == "" {
+		return nil
+	}
+	if inputKeyBlock.KeyPEM == "" {
+		return nil
+	}
+
+	//	Decode PEM chain (which includes the complete chain - with cross-cert) into Go certs
+	//	Chain output from Sectigo API is in ss-root>cross>issuing>leaf order (?!?) so needs reversing
+	certChain := []*x509.Certificate{}
+	var certDERBlock *pem.Block
+
+	certPEMBlock := []byte(inputKeyBlock.CertPEM)
+	for {
+		certDERBlock, certPEMBlock = pem.Decode(certPEMBlock)
+		if certDERBlock == nil {
+			break
+		}
+		if certDERBlock.Type == "CERTIFICATE" {
+			thisCert, _ := x509.ParseCertificate(certDERBlock.Bytes)
+			certChain = append(certChain, thisCert)
+		}
+	}
+
+	//	Reverse the chain order
+	for i := len(certChain)/2 - 1; i >= 0; i-- {
+		opp := len(certChain) - 1 - i
+		certChain[i], certChain[opp] = certChain[opp], certChain[i]
+	}
+
+	//	Convert private key PEM into Go pkcs8
+	pKeyBlock, _ := pem.Decode([]byte(inputKeyBlock.KeyPEM))
+	privateKeyInterface, err := x509.ParsePKCS8PrivateKey(pKeyBlock.Bytes)
+	if err != nil {
+		return nil
+	}
+
+	//	Create the PFX - not passing the self-signed root, though hence 1:len(x)-2 on the slice of certs
+	pfxBytes, err := p12.Encode(rand.Reader, privateKeyInterface, certChain[0], certChain[1:len(certChain)-2], p12Password)
+	if err != nil {
+		return nil
+	}
+	return pfxBytes
 }
