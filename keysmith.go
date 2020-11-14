@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"strings"
 
+	"encoding/base64"
 	"encoding/pem"
 
 	p12 "software.sslmate.com/src/go-pkcs12"
@@ -32,7 +33,7 @@ type KeyBlock struct {
 	CSRPEM      string        `json:"csrPEM"`
 	CertPEM     string        `json:"certPEM"`
 	HashAlg     string        `json:"hashAlg"`
-	P12B64		string		  `json:"p12b64"`
+	P12B64      string        `json:"p12b64"`
 	Error       string        `json:"error"`
 }
 
@@ -154,10 +155,12 @@ func (inputKeyBlock *KeyBlock) GenerateCSR() {
 
 func (inputKeyBlock *KeyBlock) GenerateP12(p12Password string) {
 	if inputKeyBlock.CertPEM == "" {
-		return nil
+		inputKeyBlock.Error = "Input missing certificate"
+		return
 	}
 	if inputKeyBlock.KeyPEM == "" {
-		return nil
+		inputKeyBlock.Error = "Input missing private key"
+		return
 	}
 
 	//	Decode PEM chain (which includes the complete chain - with cross-cert) into Go certs
@@ -197,6 +200,6 @@ func (inputKeyBlock *KeyBlock) GenerateP12(p12Password string) {
 		inputKeyBlock.Error = "Error generating pkcs12"
 		return
 	}
-	inputKeyBlock.P12b64 = base64.StdEncoding.EncodeToString(pfxBytes)
+	inputKeyBlock.P12B64 = base64.StdEncoding.EncodeToString(pfxBytes)
 	return
 }
