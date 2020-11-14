@@ -32,6 +32,7 @@ type KeyBlock struct {
 	CSRPEM      string        `json:"csrPEM"`
 	CertPEM     string        `json:"certPEM"`
 	HashAlg     string        `json:"hashAlg"`
+	P12B64		string		  `json:"p12b64"`
 	Error       string        `json:"error"`
 }
 
@@ -151,7 +152,7 @@ func (inputKeyBlock *KeyBlock) GenerateCSR() {
 	return
 }
 
-func GenerateP12(inputKeyBlock KeyBlock, p12Password string) []byte {
+func (inputKeyBlock *KeyBlock) GenerateP12(p12Password string) {
 	if inputKeyBlock.CertPEM == "" {
 		return nil
 	}
@@ -186,13 +187,16 @@ func GenerateP12(inputKeyBlock KeyBlock, p12Password string) []byte {
 	pKeyBlock, _ := pem.Decode([]byte(inputKeyBlock.KeyPEM))
 	privateKeyInterface, err := x509.ParsePKCS8PrivateKey(pKeyBlock.Bytes)
 	if err != nil {
-		return nil
+		inputKeyBlock.Error = "Error converting private key"
+		return
 	}
 
 	//	Create the PFX - not passing the self-signed root, though hence 1:len(x)-2 on the slice of certs
 	pfxBytes, err := p12.Encode(rand.Reader, privateKeyInterface, certChain[0], certChain[1:len(certChain)-2], p12Password)
 	if err != nil {
-		return nil
+		inputKeyBlock.Error = "Error generating pkcs12"
+		return
 	}
-	return pfxBytes
+	inputKeyBlock.P12b64 = base64.StdEncoding.EncodeToString(pfxBytes)
+	return
 }
